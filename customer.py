@@ -1,7 +1,8 @@
 import os
 import csv
 import rarfile
-
+import time
+import shutil
 
 # Get Resource Path & Directory
 script_dir = os.getcwd()
@@ -20,34 +21,36 @@ if os.path.exists(client_dir):
     client_csv_files = os.listdir(client_dir)
 
     for filename in client_csv_files:
-        if filename.lower().endswith('.csv'):
+        if filename.lower().endswith(".csv"):
             full_path = os.path.join(client_dir, filename)
             print(f"🔎 Processing file: {full_path}")
 
-            with open(full_path, mode='r', newline='', encoding='utf-8-sig') as csvfile:
-                reader = csv.DictReader(csvfile, delimiter='|')
+            with open(full_path, mode="r", newline="", encoding="utf-8-sig") as csvfile:
+                reader = csv.DictReader(csvfile, delimiter="|")
 
                 # Normalize headers to strip BOMs and whitespace
                 if reader.fieldnames:
-                    headers = [header.strip().lstrip('\ufeff')
-                               for header in reader.fieldnames]
+                    headers = [
+                        header.strip().lstrip("\ufeff") for header in reader.fieldnames
+                    ]
                     print(f"📑 Headers: {headers}")
 
                     # Check for required headers
-                    if 'KUNNR' in headers and 'Name1' in headers:
+                    if "KUNNR" in headers and "Name1" in headers:
                         print("Required headers found. Extracting data...")
 
                         for row in reader:
                             selected_row = {
-                                'KUNNR': row.get('KUNNR', '').strip(),
-                                'Name1': row.get('Name1', '').strip()
+                                "KUNNR": row.get("KUNNR", "").strip(),
+                                "Name1": row.get("Name1", "").strip(),
                             }
                             # print(selected_row)
                             client_array.append(selected_row)
 
                     else:
                         print(
-                            f"Skipping {filename}: Missing 'LIFNR' or 'NAME1' header.")
+                            f"Skipping {filename}: Missing 'LIFNR' or 'NAME1' header."
+                        )
                 else:
                     print(f"Skipping {filename}: No headers found.")
 else:
@@ -73,38 +76,47 @@ records_data = set()
 # Loop On over .csv and Update
 for directory in directories:
     for item in os.listdir(directory):
-        if item.lower().endswith('.csv'):
+        if item.lower().endswith(".csv"):
             full_path = os.path.join(directory, item)
             records_data.add(full_path)
 
 for record in records_data:
     tmp_file = f"{record}.tmp"
     updated_rows = []
-    print(record)
+    print(f"🔧 Processing: {record}")
 
     with open(record, mode='r', newline='', encoding='utf-8-sig') as csvfile:
         reader = csv.DictReader(csvfile, delimiter='|')
-        original_fields = reader.fieldnames or []
+        original_fields = [f.strip().lstrip('\ufeff') for f in reader.fieldnames or []]
 
-        # Insert 'VName' after 'LIFNR'
-        new_fields = []
-        for field in original_fields:
-            new_fields.append(field)
-            if field == 'KUNNR':
-                new_fields.append('CName')
-
+        # Add 'CName' after 'KUNNR' if not already present
+        if 'CName' not in original_fields:
+            new_fields = []
+            for field in original_fields:
+                new_fields.append(field)
+                if field == 'KUNNR':
+                    new_fields.append('CName')
+        else:
+            new_fields = original_fields
+        
         for row in reader:
             lifnr = row.get('KUNNR')
             row['CName'] = lookup_dict.get(lifnr, '')
             updated_rows.append(row)
 
-        # Write to .tmp file
-        with open(tmp_file, mode='w', newline='', encoding='utf-8') as tmp_outfile:
-            writer = csv.DictWriter(
-                tmp_outfile, fieldnames=new_fields, delimiter='|')
-            writer.writeheader()
-            writer.writerows(updated_rows)
+    # Write to .tmp file
+    with open(tmp_file, mode='w', newline='', encoding='utf-8') as tmp_outfile:
+        writer = csv.DictWriter(tmp_outfile, fieldnames=new_fields, delimiter='|')
+        writer.writeheader()
+        writer.writerows(updated_rows)
 
-        # Replace original with .tmp
-        os.replace(tmp_file, record)
-        print(f"Updated: {record}")
+    for attempt in range(5):
+        try:
+            shutil.move(tmp_file, record)
+            print(f"✅ Updated: {record}")
+            break
+        except PermissionError:
+            print(f"⏳ File locked. Retrying {attempt + 1}/5...")
+            time.sleep(0.5)
+    else:
+        print(f"❌ Failed to update {record}. File may be in use.")

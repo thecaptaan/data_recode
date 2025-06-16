@@ -1,7 +1,7 @@
 import os
 import csv
 import rarfile
-
+import shutil
 
 # Get Resource Path & Directory
 script_dir = os.getcwd()
@@ -105,6 +105,13 @@ for record in records_data:
             writer.writeheader()
             writer.writerows(updated_rows)
 
-        # Replace original with .tmp
-        os.replace(tmp_file, record)
-        print(f"Updated: {record}")
+        for attempt in range(5):
+            try:
+                shutil.move(tmp_file, record)
+                print(f"✅ Updated: {record}")
+                break
+            except PermissionError:
+                print(f"⏳ File locked. Retrying {attempt + 1}/5...")
+                time.sleep(0.5)
+        else:
+            print(f"❌ Failed to update {record}. File may be in use.")
